@@ -1,0 +1,12 @@
+Flask
+Flask-SQLAlchemy
+Flask-Login
+passlib
+pandas
+Flask-Limiter
+Flask-WTF
+flask_caching
+pymysql
+Flask-Migrate
+rich
+cryptography
