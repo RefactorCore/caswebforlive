@@ -1,0 +1,613 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-box2-heart me-2"></i>Consignment Details</h2>
+            <p class="text-muted mb-0">{{ consignment.receipt_number }}</p>
+        </div>
+        <div>
+            <a href="{{ url_for('consignment.list_received') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Back to List
+            </a>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Consignment Information</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless">
+                                <tr>
+                                    <td><strong>Receipt Number:</strong></td>
+                                    <td>{{ consignment.receipt_number }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Supplier:</strong></td>
+                                    <td>{{ consignment.supplier.name }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Date Received:</strong></td>
+                                    <td>{{ consignment.date_received.strftime('%Y-%m-%d %H:%M') }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Expected Return:</strong></td>
+                                    <td>
+                                        {% if consignment.expected_return_date %}
+                                            {{ consignment.expected_return_date.strftime('%Y-%m-%d') }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless">
+                                <tr>
+                                    <td><strong>Commission Rate:</strong></td>
+                                    <td>{{ consignment.commission_rate }}%</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Status:</strong></td>
+                                    <td>
+                                        {% if consignment.status == 'Active' %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% elif consignment.status == 'Partial' %}
+                                            <span class="badge bg-warning text-dark">Partial</span>
+                                        {% elif consignment.status == 'Closed' %}
+                                            <span class="badge bg-secondary">Closed</span>
+                                        {% elif consignment.status == 'Cancelled' %}
+                                            <span class="badge bg-danger">Cancelled</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Received By:</strong></td>
+                                    <td>{{ consignment.created_by.username if consignment.created_by else 'N/A' }}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Total Items:</strong></td>
+                                    <td>{{ consignment.total_items }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    {% if consignment.notes %}
+                    <div class="mt-3">
+                        <strong>Notes:</strong>
+                        <p class="text-muted mb-0">{{ consignment.notes }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Financial Summary</h5>
+                    <table class="table table-sm">
+                        <tr>
+                            <td>Total Retail Value:</td>
+                            <td class="text-end"><strong>₱{{ consignment.total_value | money }}</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Total Sold:</td>
+                            <td class="text-end">₱{{ consignment.get_total_sold_value() | money }}</td>
+                        </tr>
+                        <tr class="table-success">
+                            <td><strong>Commission Earned:</strong></td>
+                            <td class="text-end"><strong>₱{{ consignment.get_commission_earned() | money }}</strong></td>
+                        </tr>
+                        <tr class="table-warning">
+                            <td><strong>Due to Supplier:</strong></td>
+                            <td class="text-end"><strong>₱{{ consignment.get_amount_due_to_supplier() | money }}</strong></td>
+                        </tr>
+                        <tr>
+                            <td>Total Paid:</td>
+                            <td class="text-end">
+                                ₱{{ total_paid | money }}
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    {% if consignment.status != 'Closed' %}
+                    <button class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#remitPaymentModal">
+                        <i class="bi bi-cash-stack me-1"></i> Remit Payment/Products
+                    </button>
+                    {% else %}
+                    <p class="text-center text-success mb-0">
+                        <i class="bi bi-check-circle-fill"></i> This consignment is closed and paid.
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Consignment Items</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Product Name</th>
+                            <th>Description</th>
+                            <th>Barcode</th>
+                            <th class="text-center">Received</th>
+                            <th class="text-center">Sold</th>
+                            <th class="text-center">Returned</th>
+                            <th class="text-center">Damaged</th>
+                            <th class="text-center">Available</th>
+                            <th class="text-end">Retail Price</th>
+                            <th class="text-end">Total Value</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td><code>{{ item.sku }}</code></td>
+                            <td><strong>{{ item.product_name }}</strong></td>
+                            <td>{{ item.description or '-' }}</td>
+                            <td>{{ item.barcode or '-' }}</td>
+                            <td class="text-center">{{ item.quantity_received }}</td>
+                            <td class="text-center">
+                                {% if item.quantity_sold > 0 %}
+                                    <span class="badge bg-success">{{ item.quantity_sold }}</span>
+                                {% else %}
+                                    {{ item.quantity_sold }}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ item.quantity_returned }}</td>
+                            <td class="text-center">
+                                {% if item.quantity_damaged > 0 %}
+                                    <span class="badge bg-danger">{{ item.quantity_damaged }}</span>
+                                {% else %}
+                                    {{ item.quantity_damaged }}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <strong>{{ item.quantity_available }}</strong>
+                            </td>
+                            <td class="text-end">₱{{ item.retail_price | money }}</td>
+                            <td class="text-end">₱{{ (item.quantity_received * item.retail_price) | money }}</td>
+                            <td>
+                                {% if item.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <!-- Use data-attributes and no inline JS to avoid escaping issues -->
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary btn-adjust"
+                                        data-item-id="{{ item.id }}"
+                                        data-item-name="{{ item.product_name|e }}"
+                                        data-qty-returned="{{ item.quantity_returned or 0 }}"
+                                        data-qty-damaged="{{ item.quantity_damaged or 0 }}"
+                                        {% if consignment.status == 'Closed' %}disabled{% endif %}>
+                                    <i class="bi bi-pencil"></i> Adjust
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="13" class="text-center text-muted">No items found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <td colspan="4" class="text-end"><strong>TOTALS:</strong></td>
+                            <td class="text-center"><strong>{{ items|sum(attribute='quantity_received') }}</strong></td>
+                            <td class="text-center"><strong>{{ items|sum(attribute='quantity_sold') }}</strong></td>
+                            <td class="text-center"><strong>{{ items|sum(attribute='quantity_returned') }}</strong></td>
+                            <td class="text-center"><strong>{{ items|sum(attribute='quantity_damaged') }}</strong></td>
+                            <td class="text-center"><strong>{{ items|sum(attribute='quantity_available') }}</strong></td>
+                            <td colspan="4"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">Remittance History</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Reference</th>
+                            <th>Amount</th>
+                            <th>Mode</th>
+                            <th>Notes</th>
+<!--                             <th>Status</th>
+                            <th>Action</th> -->
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in consignment.remittances %}
+                        <tr class="{{ 'text-muted text-decoration-line-through' if r.voided_at else '' }}">
+                            <td>{{ r.date_paid.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ r.reference_number }}</td>
+                            <td>₱{{ "{:,.2f}".format(r.amount_paid) }}</td>
+                            <td>{{ r.payment_mode }}</td>
+                            <td>{{ r.notes }}</td>
+<!--                             <td>
+                                {% if r.voided_at %}
+                                    <span class="badge bg-danger">VOIDED</span>
+                                {% else %}
+                                    <span class="badge bg-success">Active</span>
+                                {% endif %}
+                            </td>
+                            <td> -->
+                                {% if not r.voided_at %}
+                          <!--       <button type="button" class="btn btn-sm btn-outline-danger" 
+                                        data-bs-toggle="modal" 
+                                        data-bs-target="#voidRemittanceModal{{ r.id }}">
+                                    <i class="bi bi-x-circle"></i> Void
+                                </button> -->
+                    
+                                <div class="modal fade" id="voidRemittanceModal{{ r.id }}" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="{{ url_for('void.void_consignment_remittance', remittance_id=r.id) }}" method="POST">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">Void Remittance #{{ r.id }}</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Are you sure you want to void this remittance of <strong>₱{{ "{:,.2f}".format(r.amount_paid) }}</strong>?</p>
+                                                    <p class="text-danger small">
+                                                        <i class="bi bi-exclamation-triangle-fill"></i> 
+                                                        This will reverse the financial entry and mark linked sales as "Pending" (Unpaid).
+                                                    </p>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Reason for Voiding *</label>
+                                                        <input type="text" name="void_reason" class="form-control" required placeholder="e.g. Wrong amount, Check bounced">
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-danger">Confirm Void</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">No remittances found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+        <div class="btn-group" role="group">
+            <a href="{{ url_for('consignment.list_received') }}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Back to List
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="adjustItemModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="adjustItemTitle">Mark Item as Damaged</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="adjustItemForm">
+                <div class="modal-body">
+                    <p>Mark items that are damaged and cannot be sold or returned.</p>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Note:</strong> Unsold items will be automatically returned when you remit payment to the supplier.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity Damaged</label>
+                        <input type="number" name="quantity_damaged" id="edit_qty_damaged" class="form-control" min="0" required>
+                        <small class="text-muted">Items that are broken, expired, or unsellable</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason (Optional)</label>
+                        <textarea name="damage_reason" class="form-control" rows="2" placeholder="e.g., Broken during transit, Expired, etc."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Mark as Damaged</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="remitPaymentModal" tabindex="-1" aria-labelledby="remitPaymentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="remitPaymentModalLabel">Remit Payment and Handle Returns</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="{{ url_for('consignment.remit_payment', consignment_id=consignment.id) }}" id="remittanceForm">
+                <div class="modal-body">
+                    <p class="alert alert-info">
+                        Amount Due to Supplier: <strong>₱{{ consignment.get_amount_due_to_supplier() | money }}</strong>. 
+                        Total Paid: <strong>₱{{ total_paid | money }}</strong>. 
+                        Remaining Due: <strong class="text-danger">₱{{ (consignment.get_amount_due_to_supplier() - total_paid) | money }}</strong>
+                    </p>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Amount Paid *</label>
+                            {% set remaining_due_float = (consignment.get_amount_due_to_supplier() - total_paid) | float %}
+                            <input type="number" step="0.01" min="0" class="form-control" name="amount_paid" required value="{{ '%0.2f' % (remaining_due_float if remaining_due_float > 0 else 0) }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Payment Method</label>
+                            <input type="text" class="form-control" name="payment_method" value="Bank Transfer">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Reference Number</label>
+                            <input type="text" class="form-control" name="reference_number">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" name="notes" rows="2"></textarea>
+                    </div>
+
+                    <hr>
+
+                    <h6 class="mb-3">Unsold Items: Return or Retain?</h6>
+                    <p class="text-muted">Enter the **Quantity to Return** for each item. The quantity *not* returned will be considered **retained** for continued sale.</p>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped" id="itemReturnTable">
+                            <thead>
+                                <tr>
+                                    <th>SKU/Name</th>
+                                    <th>Available to Return</th>
+                                    <th>Qty Sold</th>
+                                    <th style="width: 150px;">Qty to Return</th>
+                                    <th>Value to Return</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% set items_to_manage = items | selectattr('quantity_available', '>', 0) | list %}
+                                {% for item in items_to_manage %}
+                                <tr data-item-id="{{ item.id }}" data-max-qty="{{ item.quantity_available }}" data-price="{{ '%0.2f' % item.retail_price }}">
+                                    <td>
+                                        <strong>{{ item.sku }}</strong>
+                                        <br><small>{{ item.product_name }}</small>
+                                    </td>
+                                    <td><span class="badge bg-primary">{{ item.quantity_available }}</span></td>
+                                    <td>{{ item.quantity_sold }}</td>
+                                    <td>
+                                        <input type="number" 
+                                               name="qty_to_return_{{ item.id }}" 
+                                               data-item-id="{{ item.id }}"
+                                               data-max="{{ item.quantity_available }}"
+                                               min="0" 
+                                               max="{{ item.quantity_available }}" 
+                                               value="0" 
+                                               class="form-control form-control-sm item-return-qty">
+                                    </td>
+                                    <td><span id="return_value_{{ item.id }}">₱0.00</span></td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted">All items have been sold, returned, or damaged.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="3" class="text-end"><strong>TOTAL ITEMS BEING RETURNED:</strong></td>
+                                    <td><strong id="total_returned_qty">0</strong></td>
+                                    <td><strong id="total_returned_value">₱0.00</strong></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <input type="hidden" name="return_items_json" id="return_items_json">
+                    
+                    <hr>
+                    
+
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Record Remittance</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('remittanceForm');
+    const table = document.getElementById('itemReturnTable');
+    
+    if (!form || !table) {
+        console.error("Remittance form or table not found. Skipping JS setup.");
+        return;
+    }
+
+    // Helper function for safe float conversion
+    const toDecimal = (value) => parseFloat(value) || 0;
+
+    function updateReturnTotals() {
+        let totalQty = 0;
+        let totalValue = 0;
+        const itemsToReturn = [];
+
+        table.querySelectorAll('tbody tr').forEach(row => {
+            const itemId = row.dataset.itemId;
+            const qtyInput = row.querySelector('.item-return-qty');
+            
+            // Skip rows that don't have a quantity input (e.g., the 'No items' row)
+            if (!qtyInput) return;
+            
+            const price = toDecimal(row.dataset.price);
+            const maxValue = parseInt(qtyInput.max);
+            
+            let qtyToReturn = parseInt(qtyInput.value) || 0;
+            
+            // Client-side validation to prevent exceeding max/going negative
+            if (qtyToReturn > maxValue) {
+                qtyToReturn = maxValue;
+                qtyInput.value = maxValue;
+            }
+            if (qtyToReturn < 0) {
+                qtyToReturn = 0;
+                qtyInput.value = 0;
+            }
+
+            const lineValue = qtyToReturn * price;
+            
+            document.getElementById(`return_value_${itemId}`).textContent = '₱' + lineValue.toFixed(2);
+            
+            totalQty += qtyToReturn;
+            totalValue += lineValue;
+
+            if (qtyToReturn > 0) {
+                itemsToReturn.push({
+                    item_id: itemId,
+                    qty_returned: qtyToReturn
+                });
+            }
+        });
+
+        document.getElementById('total_returned_qty').textContent = totalQty;
+        document.getElementById('total_returned_value').textContent = '₱' + totalValue.toFixed(2);
+        
+        // Populate hidden field for the Python backend to read
+        document.getElementById('return_items_json').value = JSON.stringify(itemsToReturn);
+    }
+    
+    // Attach event listeners to quantity inputs
+    table.querySelectorAll('.item-return-qty').forEach(input => {
+        input.addEventListener('input', updateReturnTotals);
+    });
+
+    // Run on initial load
+    updateReturnTotals();
+    
+});
+// Wait for the page to be fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Page loaded. Looking for adjust buttons...');
+    
+    // Find all buttons with the class .btn-adjust
+    const adjustButtons = document.querySelectorAll('.btn-adjust');
+    
+    console.log('Found ' + adjustButtons.length + ' adjust buttons.');
+
+    if (adjustButtons.length === 0) {
+        console.warn('No adjust buttons found! Check if items exist and buttons are rendered.');
+        return;
+    }
+
+    // Add a click event listener to EACH button
+    adjustButtons.forEach((button, index) => {
+        console.log('Attaching listener to button #' + (index + 1));
+        
+        button.addEventListener('click', function(event) {
+            event.preventDefault(); // Prevent any default action
+            
+            console.log('=== Adjust button clicked! ===');
+            
+            // 'this' refers to the specific button that was clicked
+            const id = this.dataset.itemId;
+            const name = this.dataset.itemName;
+            const returned = this.dataset.qtyReturned || '0';
+            const damaged = this.dataset.qtyDamaged || '0';
+
+            console.log('Item ID:', id);
+            console.log('Item Name:', name);
+            console.log('Current Returned Qty:', returned);
+            console.log('Current Damaged Qty:', damaged);
+            
+            // Validate that we have an ID
+            if (!id || id === 'undefined') {
+                console.error('ERROR: Item ID is missing or undefined!');
+                alert('Error: Cannot identify the item. Please refresh the page.');
+                return;
+            }
+            
+            try {
+                // Build the action URL
+                const baseUrl = "{{ url_for('consignment.adjust_item', item_id=0) }}";
+                const actionUrl = baseUrl.replace('/0/', '/' + id + '/');
+                
+                console.log('Setting form action to:', actionUrl);
+                
+                // Set the form action URL
+                const form = document.getElementById('adjustItemForm');
+                if (!form) {
+                    throw new Error('Form #adjustItemForm not found!');
+                }
+                form.action = actionUrl;
+                
+                // Populate modal fields
+                const titleElement = document.getElementById('adjustItemTitle');
+                const damagedInput = document.getElementById('edit_qty_damaged');
+
+                if (!titleElement || !damagedInput) {
+                    throw new Error('One or more modal form elements not found!');
+                }
+
+                titleElement.textContent = 'Mark as Damaged: ' + (name || 'Unknown Item');
+                damagedInput.value = damaged;
+                
+                // Show the modal
+                const modalElement = document.getElementById('adjustItemModal');
+                if (!modalElement) {
+                    throw new Error('Modal #adjustItemModal not found!');
+                }
+                
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+                
+                console.log('✅ Modal successfully triggered.');
+
+            } catch (e) {
+                console.error('❌ Error opening modal:', e);
+                alert('Error opening adjustment form: ' + e.message);
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

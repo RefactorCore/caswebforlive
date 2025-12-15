@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card border-danger">
+        <div class="card-header bg-danger text-white">
+          <h4 class="mb-0"><i class="bi bi-exclamation-triangle-fill"></i> License Expired</h4>
+        </div>
+        <div class="card-body text-center">
+          <i class="bi bi-shield-x" style="font-size: 5rem; color: #dc3545;"></i>
+          <h3 class="mt-3">Your Software License Has Expired</h3>
+          
+          {% if license_data %}
+          <p class="lead">
+            License expired on: <strong>{{ license_data['expires'] }}</strong><br>
+            <small class="text-muted">({{ days_expired }} days ago)</small>
+          </p>
+          {% endif %}
+          
+          <hr>
+          
+          <p>To continue using this software, please renew your license. </p>
+
+          <div class="alert alert-info">
+            <strong>Contact Support: </strong><br>
+            Email: jahsaberon08@gmail.com<br>
+            Phone: +63 9361042031
+          </div>
+          
+          <a href="{{ url_for('core.logout') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-box-arrow-right"></i> Logout
+          </a>
+            <a href="{{ url_for('core.setup_license') }}" class="btn btn-sm btn-primary">
+              <i class="bi bi-arrow-repeat"></i> Renew License
+            </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

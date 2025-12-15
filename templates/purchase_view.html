@@ -1,0 +1,409 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid px-4 py-4">
+
+  <style>
+    /* Keep header actions fixed and prevent long supplier names from shifting buttons */
+    .purchase-top {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .purchase-meta {
+      flex: 1 1 auto;
+      min-width: 0; /* allow truncation */
+    }
+    .purchase-actions {
+      flex: 0 0 auto;
+      display: flex;
+      gap: .5rem;
+      align-items: flex-start; /* keep buttons aligned to the top */
+      white-space: nowrap;
+    }
+    /* ensure supplier line doesn't wrap and gets ellipsis when too long */
+    .supplier-line {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    /* small responsive tweak so actions wrap under metadata on very narrow screens */
+    @media (max-width: 575.98px) {
+      .purchase-top {
+        flex-direction: column;
+        gap: .75rem;
+      }
+      .purchase-actions {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+
+  <div class="purchase-top mb-3">
+    <div class="purchase-meta">
+      <h2 class="mb-0">📄 Purchase #{{ purchase.id }}
+        {% if purchase.voided_at %}
+        <span class="badge bg-dark ms-2">VOIDED</span>
+        {% elif purchase.status == 'Paid' %}
+        <span class="badge bg-success ms-2">PAID</span>
+        {% elif purchase.status == 'Partial' %}
+        <span class="badge bg-warning text-dark ms-2">PARTIAL PAYMENT</span>
+        {% else %}
+        <span class="badge bg-danger ms-2">OPEN</span>
+        {% endif %}
+      </h2>
+
+      <p class="text-muted mb-0">
+        Supplier:
+        <span class="supplier-line" title="{{ purchase.supplier }}"><strong>{{ purchase.supplier }}</strong></span>
+        &nbsp; | &nbsp;
+        Date: {{ purchase.created_at.strftime("%Y-%m-%d %H:%M") if purchase.created_at else "—" }}
+        &nbsp; | &nbsp; Payment: <strong>{{ purchase.payment_type }}</strong>
+        {% if purchase.payment_type == 'Credit' and purchase.due_date %}
+            &nbsp; | &nbsp; Due Date: <span class="text-danger fw-semibold">{{ purchase.due_date.strftime("%Y-%m-%d") }}</span>
+        {% endif %}
+      </p>
+    </div>
+
+    <div class="purchase-actions">
+      {% if not purchase.voided_at %}
+      <button onclick="window.print()" class="btn btn-outline-secondary">
+        🖨 Print
+      </button>
+      {% endif %}
+      <a href="{{ url_for('core.purchases') }}" class="btn btn-secondary">
+        ⬅ Back
+      </a>
+    </div>
+  </div>
+
+  {% if purchase.voided_at %}
+  <div class="alert alert-danger">
+    <h5><i class="bi bi-x-circle-fill me-2"></i>Purchase Voided</h5>
+    <p class="mb-1"><strong>Voided At:</strong> {{ purchase.voided_at.strftime('%Y-%m-%d %H:%M') }}</p>
+    <p class="mb-1"><strong>Voided By:</strong> {{ purchase.voided_by_user.username if purchase.voided_by_user else 'System' }}</p>
+    <p class="mb-0"><strong>Reason:</strong> {{ purchase.void_reason }}</p>
+  </div>
+  {% endif %}
+
+  {% set balance_due = (purchase.total - purchase.paid) %}
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 h-100 {{ 'border-danger' if purchase.voided_at else '' }}">
+        <div class="card-body text-center">
+          <h6 class="text-muted">Total Gross Purchase</h6>
+          <h3 class="text-success fw-bold">₱{{ purchase.total | money }}</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body text-center">
+          <h6 class="text-muted">Total Paid</h6>
+          <h3 class="fw-bold text-primary">
+            ₱{{ purchase.paid | money }}
+          </h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body text-center">
+          <h6 class="text-muted">Balance Due</h6>
+          <h3 class="fw-bold {{ 'text-danger' if balance_due > 0 }} ">
+            ₱{{ balance_due | money }}
+          </h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card shadow-sm border-0 h-100">
+        <div class="card-body text-center">
+          <h6 class="text-muted">VAT</h6>
+          <h3 class="fw-bold">
+            ₱{{ purchase.vat | money }}
+          </h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0">
+    <div class="card-header bg-light fw-semibold">
+      📦 Purchased Items
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle table-hover mb-0 {{ 'table-secondary text-decoration-line-through' if purchase.voided_at else '' }}">
+        <thead class="table-light">
+          <tr>
+            <th>SKU</th>
+            <th>Product Name</th>
+            <th class="text-center">Qty</th>
+            <th class="text-end">Unit Cost (₱)</th>
+            <th class="text-end">Line Total (₱)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in items %}
+            <tr>
+              <td>{{ i.sku }}</td>
+              <td>{{ i.product_name }}</td>
+              <td class="text-center">{{ i.qty }}</td>
+              <td class="text-end">₱{{ i.unit_cost | money }}</td>
+              <td class="text-end">₱{{ i.line_total | money }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-light">
+          <tr>
+            <th colspan="4" class="text-end">Subtotal (Net of VAT):</th>
+            <th class="text-end">₱{{ (purchase.total - purchase.vat) | money }}</th>
+          </tr>
+          <tr>
+            <th colspan="4" class="text-end">VAT:</th>
+            <th class="text-end">₱{{ purchase.vat | money }}</th>
+          </tr>
+          <tr>
+            <th colspan="4" class="text-end fw-bold">Total Gross:</th>
+            <th class="text-end fw-bold text-success">₱{{ purchase.total | money }}</th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <!-- Payments section -->
+  <div class="card shadow-sm border-0 mt-3">
+    <div class="card-header bg-light fw-semibold">
+      💳 Supplier Payments
+    </div>
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>Amount (₱)</th>
+            <th>Method</th>
+            <th>Reference</th>
+            <th>Status</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if payments %}
+            {% for pay in payments %}
+              <tr class="{{ 'table-secondary text-decoration-line-through' if pay.voided_at else '' }}">
+                <td>{{ pay.date.strftime('%Y-%m-%d %H:%M') if pay.date else '-' }}</td>
+                <td>₱{{ pay.amount | money }}</td>
+                <td>{{ pay.method or '-' }}</td>
+                <td>{{ pay.reference or '-' }}</td>
+                <td>
+                  {% if pay.voided_at %}
+                    <span class="badge bg-dark">VOIDED</span>
+                    <div class="small text-muted">Reason: {{ pay.void_reason or '—' }}</div>
+                  {% else %}
+                    <span class="badge bg-success">APPLIED</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if not pay.voided_at %}
+                  <div class="btn-group btn-group-sm">
+                    <button
+                      class="btn btn-outline-danger"
+                      data-action-url="{{ url_for('void.void_payment', payment_id=pay.id) }}"
+                      data-target-name="Payment ₱{{ pay.amount | money }} on {{ pay.date.strftime('%Y-%m-%d') if pay.date else '' }}"
+                      data-bs-toggle="modal"
+                      data-bs-target="#voidPaymentModal"
+                      onclick="setVoidPaymentTarget(this)">
+                      <i class="bi bi-x-circle"></i> Void Payment
+                    </button>
+                  </div>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-3">No payments recorded for this purchase.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="mt-4 d-flex justify-content-between">
+    <div>
+    {% set balance_due = (purchase.total - purchase.paid) %}
+    {% if not purchase.voided_at and purchase.status not in ['Paid', 'Canceled'] and purchase.payment_type == 'Credit' %}
+      <button class="btn btn-success me-2"
+              data-bs-toggle="modal"
+              data-bs-target="#payModal"
+              onclick="document.getElementById('maxPayment').value = '{{ balance_due | num }}'">
+        <i class="bi bi-wallet2 me-1"></i> Record Payment (₱{{ balance_due | money }})
+      </button>
+    {% elif purchase.status == 'Paid' %}
+        <span class="badge bg-primary fs-6">FULLY PAID</span>
+    {% endif %}
+    </div>
+    <div>
+    {% if not purchase.voided_at and purchase.status != 'Canceled' %}
+      <button class="btn btn-danger"
+              data-bs-toggle="modal"
+              data-bs-target="#voidModal">
+        <i class="bi bi-x-circle me-1"></i> Void Purchase
+      </button>
+    {% endif %}
+    </div>
+  </div>
+  </div>
+
+<div class="modal fade" id="voidModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form action="{{ url_for('void.void_purchase', purchase_id=purchase.id) }}" method="POST">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>Void Purchase
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning">
+            <strong>Warning:</strong> This will remove all inventory lots and reverse accounting entries.
+          </div>
+          <p>Purchase: <strong>#{{ purchase.id }}</strong></p>
+          <div class="mb-3">
+            <label class="form-label"><strong>Void Reason *</strong></label>
+            <textarea name="void_reason" class="form-control" rows="3" placeholder="e.g., Supplier cancelled order, duplicate entry, etc." required></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-x-circle me-1"></i> Void Purchase
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Void Payment Modal -->
+<div class="modal fade" id="voidPaymentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="voidPaymentForm" method="POST" action="#">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>Void Payment
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning">
+            <strong>Warning:</strong> Voiding a payment will reverse the payment's accounting and restore the purchase balance.
+          </div>
+          <p id="voidPaymentTarget" class="mb-2"></p>
+          <div class="mb-3">
+            <label class="form-label"><strong>Void Reason *</strong></label>
+            <textarea name="void_reason" id="void_payment_reason" class="form-control" rows="3" placeholder="e.g., Payment made in error, duplicate, bounced check" required></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-x-circle me-1"></i> Void Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="payModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      {% set balance_due = (purchase.total - purchase.paid) %}
+      <form action="{{ url_for('ar_ap.record_purchase_payment', purchase_id=purchase.id) }}" method="POST">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title">
+            <i class="bi bi-wallet-fill me-2"></i>Record Supplier Payment
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Purchase: <strong>#{{ purchase.id }}</strong> from <strong>{{ purchase.supplier }}</strong></p>
+          <p class="fs-5">Balance Due: <strong class="text-danger">₱{{ balance_due | money }}</strong></p>
+
+          <div class="mb-3">
+            <label class="form-label">Payment Amount *</label>
+            <input type="number"
+                   step="0.01"
+                   min="0.01"
+                   max="{{ balance_due | num }}"
+                   id="maxPayment"
+                   name="payment_amount"
+                   class="form-control form-control-lg text-end fw-bold"
+                   value="{{ balance_due | money }}"
+                   required>
+            <small class="text-muted">Max: ₱{{ balance_due | money }}</small>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Payment Method *</label>
+            <select name="payment_method" class="form-select" required>
+              <option value="Cash">Cash</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Check">Check</option>
+              <option value="E-Wallet">E-Wallet</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">Reference/Check #</label>
+            <input type="text" name="reference" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-circle me-1"></i> Apply Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<style>
+@media print {
+  .btn, .card-header, .mt-4, nav, header { display: none !important; }
+  body {
+    background: white !important;
+    font-size: 12px;
+  }
+  table {
+    font-size: 12px;
+  }
+  h2 {
+    font-size: 18px;
+  }
+}
+</style>
+
+<script>
+  // helper to set the void-payment form action and display target text
+  function setVoidPaymentTarget(buttonElement) {
+    if (!buttonElement) return;
+    const actionUrl = buttonElement.getAttribute('data-action-url') || '#';
+    const targetName = buttonElement.getAttribute('data-target-name') || '';
+    const form = document.getElementById('voidPaymentForm');
+    const target = document.getElementById('voidPaymentTarget');
+    if (form) form.action = actionUrl;
+    if (target) target.textContent = `You are about to void: ${targetName}`;
+    // clear previous reason
+    const reason = document.getElementById('void_payment_reason');
+    if (reason) reason.value = '';
+  }
+</script>
+
+{% endblock %}
