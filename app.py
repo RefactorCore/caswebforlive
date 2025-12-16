@@ -44,7 +44,7 @@ def create_app():
 
 
     @app.before_request
-    def check_setup():
+    def check_anti_tamper():
         # Block all non-whitelisted endpoints if anti-tamper failed (soft mode)
         try:
             if not app.config.get('ANTI_TAMPER_OK', True):

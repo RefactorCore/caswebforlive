@@ -1,6 +1,7 @@
 import os
 import configparser
 from pathlib import Path
+import sys
 
 class Config:
     # Determine if running as .exe or script
@@ -23,7 +24,7 @@ class Config:
         db_host = config_parser.get('database', 'host', fallback='localhost')
         db_port = config_parser.get('database', 'port', fallback='3306')
         db_user = config_parser.get('database', 'username', fallback='coretally_app')
-        db_pass = config_parser. get('database', 'password', fallback='')
+        db_pass = config_parser.get('database', 'password', fallback='')
         db_name = config_parser.get('database', 'database', fallback='app')
         
         SQLALCHEMY_DATABASE_URI = f'mysql+pymysql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}?charset=utf8mb4'
