@@ -10,3 +10,4 @@ pymysql
 Flask-Migrate
 rich
 cryptography
+waitress
