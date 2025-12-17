@@ -1,13 +1,8 @@
-# https://github.com/your/repo/path/app.py (update in your repo)
-# Updated: register money and num filters inside create_app and removed invalid global assignment.
 
-# --- FIX: Import the necessary functions ---
 from flask import Flask, redirect, url_for, request, flash, session
-# --- FIX: Import current_user ---
 from flask_login import LoginManager, current_user
 from routes.accounts import accounts_bp
 from flask_migrate import Migrate
-
 
 from models import db, User, CompanyProfile, Account
 from config import Config
@@ -16,13 +11,14 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from extensions import limiter
 from passlib.hash import pbkdf2_sha256
-from routes.void_transactions import void_bp
-# keep local reference to a to_decimal implementation we can call (avoid circular imports at module level)
-from routes.ar_ap import to_decimal as _to_decimal
 from routes.utils import cache
 import json
 import os
+import logging
 from routes.license_utils import verify_anti_tamper
+
+logger = logging.getLogger(__name__)
+
 
 
 
@@ -30,14 +26,27 @@ def create_app():
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(Config)
 
+    # Anti-tamper check (run early)
     fail_fast = os.environ.get('ANTI_TAMPER_FAIL_FAST', '1') not in ('0', 'false', 'False')
-    ok, mismatches = verify_anti_tamper(fail_fast=fail_fast)
+    try:
+        ok, mismatches = verify_anti_tamper(fail_fast=fail_fast)
+    except Exception:
+        # If verification fails unexpectedly, treat as tampered (and log)
+        logger.exception("Anti-tamper verification raised an exception; marking as tampered.")
+        ok = False
+        mismatches = ["anti-tamper check exception"]
     # If not failing fast, you can mark the app as tampered and block requests later:
     app.config['ANTI_TAMPER_OK'] = ok
     app.config['ANTI_TAMPER_MISMATCHES'] = mismatches
 
-    cache.init_app(app, config={'CACHE_TYPE': 'simple'})
+    # Configure cache in app.config then init
+    app.config.setdefault('CACHE_TYPE', 'simple')
+    cache.init_app(app)
+
+    # Initialize rate limiter (from extensions)
     limiter.init_app(app)
+
+    # Register blueprints and initialize DB/migrations
     app.register_blueprint(accounts_bp)
     db.init_app(app)
     migrate = Migrate(app, db)
@@ -53,19 +62,31 @@ def create_app():
                     flash('Security violation detected. Service is locked down. Contact administrator.', 'danger')
                     return redirect(url_for('core.login'))
         except Exception:
-            pass
-
-        from routes.license_utils import get_days_until_expiration
+            logger.exception("Error during anti-tamper before_request check")
 
     # --- Login Manager ---
     login_manager = LoginManager()
-    # --- FIX: Point to the correct blueprint endpoint ---
+    # Ensure this points to your actual login endpoint (blueprint_name.view_func_name)
     login_manager.login_view = 'core.login'
     login_manager.init_app(app)
 
     @login_manager.user_loader
     def load_user(user_id):
-        return db.session.get(User, int(user_id))
+        # Be defensive: user_id can be None or non-numeric
+        try:
+            uid = int(user_id)
+        except (TypeError, ValueError):
+            return None
+        # Use db.session.get for SQLAlchemy >=1.4; adapt if you use an older API:
+        try:
+            return db.session.get(User, uid)
+        except Exception:
+            # Fallback for older SQLAlchemy versions or unexpected errors:
+            try:
+                return User.query.get(uid)
+            except Exception:
+                logger.exception("Failed to load user id=%r", user_id)
+                return None
 
     # Register template filters inside create_app to avoid import-time issues
     def money_filter(value):
@@ -74,16 +95,36 @@ def create_app():
         Templates should add the currency symbol where needed (e.g., ₱{{ value | money }}).
         """
         try:
+            # lazy import to avoid circular imports at module import time
+            from routes.ar_ap import to_decimal as _to_decimal
             return format(_to_decimal(value), '0.2f')
         except Exception:
+            logger.exception("money_filter failed for value=%r", value)
             return "0.00"
 
     def num_filter(value):
-        """Return a native float safe for use with tojson / JS numeric usage.""" 
+        """Return a native float safe for use with tojson / JS numeric usage."""
         try:
+            from routes.ar_ap import to_decimal as _to_decimal
             return float(_to_decimal(value))
         except Exception:
+            logger.exception("num_filter failed for value=%r", value)
             return 0.0
+
+    app.jinja_env.filters['money'] = money_filter
+    app.jinja_env.filters['num'] = num_filter
+
+    # Additional blueprint registrations (if you have others)
+    try:
+        # lazy import to avoid import-time failures / circular imports
+        from routes.void_transactions import void_bp as _void_bp
+        app.register_blueprint(_void_bp)
+    except Exception:
+        # import or registration failed — log full exception but continue startup
+        logger.exception("Failed to import or register void_bp blueprint")
+
+    # Return the configured Flask app
+    return app
 
     app.jinja_env.filters['money'] = money_filter
     app.jinja_env.filters['num'] = num_filter
@@ -201,6 +242,7 @@ def seed_essential_data(app):
 
 
 
+
 if __name__ == '__main__': 
     app = create_app()
     with app.app_context():
@@ -228,3 +270,6 @@ if __name__ == '__main__':
     debug=False,  # ✅ Disable debug mode
     threaded=True  # Enable multi-threading for better performance
 )
+
+
+
