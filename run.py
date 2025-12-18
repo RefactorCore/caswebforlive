@@ -5,9 +5,11 @@ import socket
 import threading
 import logging
 import webbrowser
+from pathlib import Path
 
 from config import Config
-from app import create_app
+from app import create_app, seed_essential_data
+from models import db
 
 def get_lan_ip() -> str:
     """Return the host's LAN IP (best-effort), fallback to 127.0.0.1."""
@@ -34,25 +36,127 @@ def open_browser_later(url: str, delay: float = 1.5):
             pass
     threading.Timer(delay, _open).start()
 
-if __name__ == '__main__':
-    # Log to file when console is hidden; keep it simple and robust
-    log_dir = Config.BASE_DIR / 'logs'
+def get_log_directory():
+    """
+    Get a suitable log directory with write permissions.
+    
+    Priority: 
+    1. LOG_DIR environment variable
+    2. User's AppData/Roaming (Windows) or ~/.local/share (Linux)
+    3. Fallback to BASE_DIR/logs if writable
+    """
+    # Check environment variable first
+    env_log_dir = os.environ.get('CORETALLY_LOG_DIR')
+    if env_log_dir:
+        log_dir = Path(env_log_dir)
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            # Test write permission
+            test_file = log_dir / '.write_test'
+            test_file.touch()
+            test_file.unlink()
+            return log_dir
+        except Exception:
+            logging.warning(f"Cannot write to LOG_DIR: {log_dir}")
+    
+    # Platform-specific user data directory
     try:
-        log_dir.mkdir(exist_ok=True)
+        if os.name == 'nt':  # Windows
+            base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+            log_dir = base / 'CoreTally' / 'logs'
+        else:  # Linux/Mac
+            log_dir = Path.home() / '.local' / 'share' / 'coretally' / 'logs'
+        
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
     except Exception:
         pass
-    logfile = log_dir / 'coretally.log'
+    
+    # Fallback:  try BASE_DIR/logs
+    try:
+        log_dir = Config.BASE_DIR / 'logs'
+        log_dir.mkdir(exist_ok=True)
+        return log_dir
+    except Exception: 
+        # Last resort: temp directory
+        import tempfile
+        return Path(tempfile.gettempdir()) / 'coretally_logs'
 
+def initialize_database(app):
+    """Initialize database tables and seed essential data if needed."""
+    with app.app_context():
+        try:
+            # Check if database needs initialization
+            from models import Account, User, CompanyProfile
+            
+            # Try to query - if tables don't exist, this will fail
+            try:
+                Account.query.first()
+                logging.info("Database tables already exist")
+            except Exception:  
+                logging.info("Creating database tables...")
+                db.create_all()
+                logging.info("Database tables created successfully")
+            
+            # Seed essential data if Chart of Accounts is empty
+            if Account.query.count() == 0:
+                logging.info("Seeding essential data...")
+                seed_essential_data(app)
+                logging.info("Essential data seeded successfully")
+            else:
+                logging.info("Database already contains data")
+                
+        except Exception as e:  
+            logging.exception(f"Error initializing database: {e}")
+            raise
+
+if __name__ == '__main__':  
+    # ✅ Get log directory with fallback options
+    log_dir = get_log_directory()
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"WARNING: Could not create log directory {log_dir}:  {e}")
+        import tempfile
+        log_dir = Path(tempfile.gettempdir())
+    
+    logfile = log_dir / 'coretally.log'
+    
+    # ✅ Add log rotation to prevent huge log files
+    from logging.handlers import RotatingFileHandler
+    
+    # Create handlers
+    file_handler = RotatingFileHandler(
+        logfile,
+        maxBytes=10*1024*1024,  # 10 MB
+        backupCount=5,  # Keep 5 backup files
+        encoding='utf-8'
+    )
+    file_handler.setLevel(logging.INFO)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # Configure logging
     logging.basicConfig(
         level=os.environ.get('LOGLEVEL', 'INFO'),
         format='%(asctime)s %(levelname)s %(name)s: %(message)s',
-        handlers=[
-            logging.FileHandler(logfile, encoding='utf-8'),
-            # You can also add a StreamHandler for dev runs with console
-        ],
+        handlers=[file_handler, console_handler]
     )
+    
+    logging.info(f"📁 Logging to:  {logfile}")
+    logging.info(f"🖥️  Running from: {Config.BASE_DIR}")
 
     app = create_app()
+    
+    # Initialize database on startup
+    logging.info("Checking database initialization...")
+    try:
+        initialize_database(app)
+    except Exception as e:  
+        logging.error(f"Failed to initialize database:  {e}")
+        logging.error("Please check your database configuration in db_config.ini")
+        sys.exit(1)
 
     # Bind to all interfaces so other devices on LAN can connect
     host_bind = os.environ.get('FLASK_HOST', '0.0.0.0')
@@ -71,14 +175,14 @@ if __name__ == '__main__':
         try:
             from waitress import serve
             threads = int(os.environ.get('WAITRESS_THREADS', '8'))
-            logging.info(f"Starting Coretally at {url} (Waitress, threads={threads})")
+            logging.info(f"🚀 Starting Coretally at {url} (Waitress, threads={threads})")
             serve(app, host=host_bind, port=port, threads=threads)
-        except Exception:
+        except Exception:  
             logging.exception("Waitress failed; falling back to Flask dev server")
             debug = getattr(Config, 'DEBUG', False)
             app.run(host=host_bind, port=port, debug=debug, use_reloader=False)
     else:
         # Dev-only fallback
         debug = getattr(Config, 'DEBUG', False)
-        logging.info(f"Starting Coretally at {url} (Flask dev server)")
+        logging.info(f"🚀 Starting Coretally at {url} (Flask dev server)")
         app.run(host=host_bind, port=port, debug=debug, use_reloader=False)

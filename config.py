@@ -7,14 +7,53 @@ class Config:
     if getattr(sys, 'frozen', False):
         BASE_DIR = Path(sys.executable).parent
     else:
-        BASE_DIR = Path(__file__).parent
+        BASE_DIR = Path(__file__).resolve().parent
 
     RESOURCE_DIR = Path(getattr(sys, '_MEIPASS', BASE_DIR))
 
     CONFIG_FILE_RUNTIME = BASE_DIR / 'db_config.ini'
     CONFIG_FILE_BUNDLED = RESOURCE_DIR / 'db_config.ini'
 
+    # ✅ LOG DIRECTORY CONFIGURATION
+    @staticmethod
+    def get_log_dir():
+        """Get log directory with write permissions."""
+        # 1. Check environment variable
+        env_log = os.environ.get('CORETALLY_LOG_DIR')
+        if env_log:
+            log_dir = Path(env_log)
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                return log_dir
+            except Exception: 
+                pass
+        
+        # 2. User data directory (recommended for production)
+        try:
+            if os.name == 'nt': 
+                base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+                log_dir = base / 'CoreTally' / 'logs'
+            else: 
+                log_dir = Path.home() / '.local' / 'share' / 'coretally' / 'logs'
+            log_dir.mkdir(parents=True, exist_ok=True)
+            return log_dir
+        except Exception:
+            pass
+        
+        # 3. Fallback: BASE_DIR/logs
+        try: 
+            log_dir = Config.BASE_DIR / 'logs'
+            log_dir.mkdir(parents=True, exist_ok=True)
+            return log_dir
+        except Exception:
+            import tempfile
+            return Path(tempfile.gettempdir()) / 'coretally_logs'
+    
+    LOG_DIR = get_log_dir.__func__()
+    LOG_FILE = LOG_DIR / 'coretally.log'
+
     # Prefer storing the secret near the EXE, but fall back to a user-writable location
+    @staticmethod
     def _user_secret_path():
         try:
             if os.name == 'nt':
@@ -22,11 +61,11 @@ class Config:
                 return base / 'caswebforlive' / '.secret_key'
             else:
                 return Path.home() / '.caswebforlive' / '.secret_key'
-        except Exception:
+        except Exception: 
             return Path.home() / '.secret_key'
 
     SECRET_FILE = BASE_DIR / '.secret_key'
-    USER_SECRET_FILE = _user_secret_path()
+    USER_SECRET_FILE = _user_secret_path.__func__()
 
     config_parser = configparser.ConfigParser()
     if CONFIG_FILE_RUNTIME.exists():
@@ -48,8 +87,9 @@ class Config:
         VAT_RATE = float(os.environ.get('VAT_RATE', 0.12))
         DEBUG = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
 
-    if not SQLALCHEMY_DATABASE_URI:
-        raise RuntimeError("DATABASE_URL not configured and no db_config.ini present.")
+    if not SQLALCHEMY_DATABASE_URI: 
+        print("WARNING: DATABASE_URL not configured.  Using SQLite fallback.")
+        SQLALCHEMY_DATABASE_URI = f'sqlite:///{BASE_DIR / "app.db"}'
 
     SECRET_KEY = None
     if config_parser.sections():
@@ -76,7 +116,7 @@ class Config:
                         os.chmod(Config.USER_SECRET_FILE, 0o600)
                     except Exception:
                         pass
-        except Exception:
+        except Exception: 
             SECRET_KEY = os.urandom(32).hex()
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -84,7 +124,7 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
         'pool_recycle': 280,
-        'pool_size': 10,
+        'pool_size':  10,
         'max_overflow': 20,
         'connect_args': {
             'charset': 'utf8mb4',

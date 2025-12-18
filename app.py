@@ -8,11 +8,8 @@ from flask_migrate import Migrate
 
 from models import db, User, CompanyProfile, Account
 from config import Config
-from routes.accounts import accounts_bp
-from routes.core import core_bp
 from extensions import limiter
 from routes.utils import cache
-from routes.license_utils import verify_anti_tamper
 
 logger = logging.getLogger(__name__)
 
@@ -38,63 +35,104 @@ def create_app():
     )
     app.config.from_object(Config)
 
-    # Anti-tamper check (run early)
-    fail_fast = os.environ.get('ANTI_TAMPER_FAIL_FAST', '1') not in ('0', 'false', 'False')
-    try:
-        ok, mismatches = verify_anti_tamper(fail_fast=fail_fast)
-    except Exception:
-        logger.exception("Anti-tamper verification raised an exception; marking as tampered.")
-        ok = False
-        mismatches = ["anti-tamper check exception"]
-    app.config['ANTI_TAMPER_OK'] = ok
-    app.config['ANTI_TAMPER_MISMATCHES'] = mismatches
+    # ✅ Anti-tamper check (ONLY in production/frozen mode)
+    if getattr(sys, 'frozen', False):
+        fail_fast = os.environ.get('ANTI_TAMPER_FAIL_FAST', '1') not in ('0', 'false', 'False')
+        try:
+            from routes.license_utils import verify_anti_tamper
+            
+            # --- ✂️ MODIFICATION START ✂️ ---
+            # ✅ Build baseline from environment or use sys.executable
+            baseline_env = os.environ.get('ANTI_TAMPER_HASHES', '')
+            baseline_map = {}
+
+            if baseline_env:
+                # Manually parse the 'path=hash' string from the environment variable
+                if '=' in baseline_env:
+                    path, expected_hash = baseline_env.split('=', 1)
+                    baseline_map[path.strip()] = expected_hash.strip().lower()
+                
+                # Call verify_anti_tamper with the constructed dictionary
+                ok, mismatches = verify_anti_tamper(baseline=baseline_map, fail_fast=fail_fast)
+            else:
+                # Fallback: no env var, skip check
+                logger.warning("ANTI_TAMPER_HASHES not set - skipping check")
+                ok = True
+                mismatches = {}
+            # --- ✂️ MODIFICATION END ✂️ ---
+                
+        except ImportError:
+            logger.warning("license_utils not found, skipping anti-tamper check")
+            ok = True
+            mismatches = []
+        except Exception:  
+            logger.exception("Anti-tamper verification raised an exception; marking as tampered.")
+            ok = False
+            mismatches = ["anti-tamper check exception"]
+            
+        app.config['ANTI_TAMPER_OK'] = ok
+        app.config['ANTI_TAMPER_MISMATCHES'] = mismatches
+    else:
+        # ✅ Running in DEV mode - skip anti-tamper
+        logger.info("🔓 DEV MODE: Skipping anti-tamper check")
+        app.config['ANTI_TAMPER_OK'] = True
+        app.config['ANTI_TAMPER_MISMATCHES'] = []
 
     # Cache and rate limiter
     app.config.setdefault('CACHE_TYPE', 'simple')
     cache.init_app(app)
     limiter.init_app(app)
 
-    # Register blueprints (do this once)
-    app.register_blueprint(accounts_bp)
-    app.register_blueprint(core_bp)
-    # Optional: register other blueprints (lazy imports to avoid circulars)
-    try:
-        from routes.ar_ap import ar_ap_bp
-        app.register_blueprint(ar_ap_bp)
-    except Exception:
-        logger.exception("Failed to import/register ar_ap_bp")
-    try:
-        from routes.reports import reports_bp
-        app.register_blueprint(reports_bp)
-    except Exception:
-        logger.exception("Failed to import/register reports_bp")
-    try:
-        from routes.users import user_bp
-        app.register_blueprint(user_bp)
-    except Exception:
-        logger.exception("Failed to import/register user_bp")
-    try:
-        from routes.consignment import consignment_bp
-        app.register_blueprint(consignment_bp)
-    except Exception:
-        logger.exception("Failed to import/register consignment_bp")
-    try:
-        from routes.void_transactions import void_bp
-        app.register_blueprint(void_bp)
-    except Exception:
-        logger.exception("Failed to import/register void_bp")
-
-    # DB and migrations
+    # DB and migrations BEFORE registering blueprints
     db.init_app(app)
     Migrate(app, db)
 
+    # Register blueprints (do this once) - Import inside function to avoid circular imports
+    with app.app_context():
+        from routes.accounts import accounts_bp
+        from routes.core import core_bp
+        
+        app.register_blueprint(accounts_bp)
+        app.register_blueprint(core_bp)
+        
+        # Optional: register other blueprints (lazy imports to avoid circulars)
+        try:
+            from routes.ar_ap import ar_ap_bp
+            app.register_blueprint(ar_ap_bp)
+        except Exception:
+            logger.exception("Failed to import/register ar_ap_bp")
+        try:
+            from routes.reports import reports_bp
+            app.register_blueprint(reports_bp)
+        except Exception:
+            logger.exception("Failed to import/register reports_bp")
+        try:
+            from routes.users import user_bp
+            app.register_blueprint(user_bp)
+        except Exception:
+            logger.exception("Failed to import/register user_bp")
+        try:
+            from routes.consignment import consignment_bp
+            app.register_blueprint(consignment_bp)
+        except Exception: 
+            logger.exception("Failed to import/register consignment_bp")
+        try:
+            from routes.void_transactions import void_bp
+            app.register_blueprint(void_bp)
+        except Exception:
+            logger.exception("Failed to import/register void_bp")
+
     @app.before_request
     def check_anti_tamper():
+        # ✅ Only enforce in frozen/compiled mode
+        if not getattr(sys, 'frozen', False):
+            return
+            
         try:
             if not app.config.get('ANTI_TAMPER_OK', True):
                 whitelist = ('core.login', 'core.logout', 'core.license_expired', 'static')
                 if not (request.endpoint and any(request.endpoint.startswith(ep) for ep in whitelist)):
-                    flash('Security violation detected. Service is locked down. Contact administrator.', 'danger')
+                    flash('Security violation detected.  Service is locked down.  Contact administrator. ', 'danger')
                     return redirect(url_for('core.login'))
         except Exception:
             logger.exception("Error during anti-tamper before_request check")
@@ -123,8 +161,12 @@ def create_app():
     def money_filter(value):
         """Format a Decimal/number to a 2-decimal string without currency symbol."""
         try:
-            from routes.ar_ap import to_decimal as _to_decimal
-            return format(_to_decimal(value), '0.2f')
+            from decimal import Decimal
+            if value is None:
+                return "0.00"
+            if not isinstance(value, Decimal):
+                value = Decimal(str(value))
+            return format(value, '0.2f')
         except Exception:
             logger.exception("money_filter failed for value=%r", value)
             return "0.00"
@@ -132,8 +174,12 @@ def create_app():
     def num_filter(value):
         """Return a native float safe for use with tojson / JS numeric usage."""
         try:
-            from routes.ar_ap import to_decimal as _to_decimal
-            return float(_to_decimal(value))
+            from decimal import Decimal
+            if value is None:
+                return 0.0
+            if not isinstance(value, Decimal):
+                value = Decimal(str(value))
+            return float(value)
         except Exception:
             logger.exception("num_filter failed for value=%r", value)
             return 0.0
@@ -217,10 +263,10 @@ def seed_essential_data(app):
         if Account.query.count() == 0:
             print("Seeding Chart of Accounts...")
             try:
-                for code, name, typ in accounts_to_seed:
+                for code, name, typ in accounts_to_seed: 
                     db.session.add(Account(code=code, name=name, type=typ))
                 db.session.commit()
                 print("Chart of Accounts seeded.")
-            except Exception as e:
+            except Exception as e: 
                 db.session.rollback()
                 print(f"Error seeding COA: {e}")
