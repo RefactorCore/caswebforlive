@@ -23,6 +23,9 @@ import platform
 import uuid
 import logging
 from typing import Dict, Tuple
+import sys
+
+logger = logging.getLogger(__name__)
 
 # cryptography for signature verification
 try:
