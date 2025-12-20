@@ -252,7 +252,7 @@ class Sale(db.Model):
     discount_value = db.Column(Money(), nullable=True, default=Decimal('0.00'))
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
@@ -290,7 +290,7 @@ class Purchase(db.Model):
     paid = db.Column(Money(), nullable=False, default=Decimal('0.00'))
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
@@ -311,7 +311,7 @@ class JournalEntry(db.Model):
     entries_json = db.Column(db.Text)
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
@@ -389,7 +389,7 @@ class ARInvoice(db.Model):
     items = db.relationship('ARInvoiceItem', backref='ar_invoice', cascade='all, delete-orphan')
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
     
@@ -446,7 +446,7 @@ class APInvoice(db.Model):
 
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
@@ -465,7 +465,7 @@ class Payment(db.Model):
     wht_amount = db.Column(Money(), default=Decimal('0.00'))
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
@@ -494,17 +494,17 @@ class StockAdjustment(db.Model):
     quantity_changed = db.Column(db.Integer, nullable=False) # e.g., -5 for loss, 10 for found
     reason = db.Column(db.String(255), nullable=False) # e.g., 'Spoilage', 'Physical Count Correction'
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     user = db.relationship('User', foreign_keys=[user_id])
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(500), nullable=True)
     voided_by_user = db.relationship('User', foreign_keys=[voided_by])
 
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"))
     user = db.relationship('User')
     action = db.Column(db.String(255), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
@@ -613,7 +613,7 @@ class ConsignmentReceived(db.Model):
     remittances = db.relationship('ConsignmentRemittance', back_populates='consignment', lazy='dynamic')
     
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"))
     created_by = db.relationship('User')
     
     def get_total_sold_value(self):
@@ -755,7 +755,7 @@ class ConsignmentPayment(db.Model):
     
     notes = db.Column(db.Text)
     
-    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"))
     created_by = db.relationship('User')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -774,7 +774,7 @@ class ConsignmentReturn(db.Model):
     
     items = db.relationship('ConsignmentReturnItem', backref='consignment_return', cascade='all, delete-orphan')
     
-    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"))
     created_by = db.relationship('User')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -797,10 +797,10 @@ class ConsignmentRemittance(db.Model):
     amount_paid = db.Column(Money(), nullable=False)
     payment_method = db.Column(db.String(50))
     notes = db.Column(db.Text)
-    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"))
 
     voided_at = db.Column(db.DateTime, nullable=True)
-    voided_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    voided_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
     void_reason = db.Column(db.String(255), nullable=True)
     
     consignment = db.relationship('ConsignmentReceived', back_populates='remittances')
@@ -827,7 +827,7 @@ class InventoryMovement(db.Model):
     reference_number = db.Column(db.String(50), nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id', ondelete="SET NULL"), nullable=True)
 
     from_branch = db.relationship('Branch', foreign_keys=[from_branch_id])
     to_branch = db.relationship('Branch', foreign_keys=[to_branch_id])
