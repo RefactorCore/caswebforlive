@@ -1,5 +1,5 @@
 from flask import Blueprint, request, flash, redirect, url_for
-from models import db, User
+from models import db, User, AuditLog
 from passlib.hash import pbkdf2_sha256
 from flask_login import login_required, current_user
 from .decorators import role_required
@@ -65,13 +65,13 @@ def update_user(user_id):
 
         if new_password:
             if len(new_password) < 6:
-                flash('Password must be at least 6 characters.', 'danger')
+                flash('Password must be at least 6 characters. ', 'danger')
                 return redirect(url_for('core.settings'))
             user.password_hash = pbkdf2_sha256.hash(new_password)
 
         db.session.commit()
-        log_action(f'Updated user: {user.username}. Changed role to {role}.')
-        flash(f'User "{user.username}" updated successfully.', 'success')
+        log_action(f'Updated user:  {user.username}.  Changed role to {role}.')
+        flash(f'User "{user.username}" updated successfully. ', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'Error updating user: {str(e)}', 'danger')
@@ -98,12 +98,20 @@ def delete_user(user_id):
                 flash('Cannot delete the last admin account.', 'danger')
                 return redirect(url_for('core.settings'))
 
+        # Store username before deletion for the log message
+        username = user.username
+        
+        # With `ondelete='SET NULL'` in the models, we no longer need to manually
+        # update related tables. SQLAlchemy will handle it when we delete the user.
+        
         db.session.delete(user)
         db.session.commit()
-        log_action(f'Deleted user: {user.username}.')
-        flash(f'User "{user.username}" has been deleted.', 'success')
+        
+        log_action(f'Deleted user: {username}.')
+        flash(f'User "{username}" has been deleted.', 'success')
     except Exception as e:
         db.session.rollback()
+        # The flash message will now show the underlying error if one occurs
         flash(f'Error deleting user: {str(e)}', 'danger')
 
     return redirect(url_for('core.settings'))
