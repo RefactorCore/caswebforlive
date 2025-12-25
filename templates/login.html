@@ -13,17 +13,77 @@
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      background-color: #f8f9fa;
+      /* Beautiful blue gradient background */
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background:  linear-gradient(135deg, #0575e6 0%, #021b79 100%);
+      background: linear-gradient(135deg, #00d2ff 0%, #3a47d5 100%);
+      background: linear-gradient(to bottom right, #4facfe 0%, #00f2fe 100%);
+      /* Choose one of the above or use this vibrant one:  */
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
+      
+      /* Final recommendation - Clean blue to light blue:  */
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7db9e8 100%);
+      
+      /* Animated gradient (optional) */
+      background-size: 200% 200%;
+      animation:  gradientShift 15s ease infinite;
     }
+
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
     .login-card {
       width: 100%;
-      max-width: 400px;
+      max-width:  400px;
+      border-radius: 15px;
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .card-title {
+      color: #1e3c72;
+      font-weight: 600;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border: none;
+      padding: 12px;
+      font-weight: 500;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .form-control: focus {
+      border-color:  #667eea;
+      box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+    }
+
+    a {
+      color: #667eea;
+      text-decoration:  none;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    a:hover {
+      color: #764ba2;
+      text-decoration: underline;
     }
   </style>
 </head>
 <body>
 
-  <div class="card login-card shadow-sm">
+  <div class="card login-card shadow-lg">
     <div class="card-body p-4">
       <h3 class="card-title text-center mb-4">Welcome Back</h3>
 
@@ -48,8 +108,8 @@
           <button type="submit" class="btn btn-primary">Login</button>
         </div>
         <div class="text-center mt-3">
-  <a href="{{ url_for('core.forgot_password') }}">Forgot Password?</a>
-</div>
+          <a href="{{ url_for('core.forgot_password') }}">Forgot Password?</a>
+        </div>
       </form>
     </div>
   </div>
